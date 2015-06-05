@@ -35,6 +35,14 @@ has ignore_build_deps => (
     default => 0,
 );
 
+has define => (
+    is      => 'ro',
+    isa     => 'ArrayRef[Str]',
+    default => sub{[]},
+);
+
+sub mvp_multivalue_args { return qw(define); }
+
 use Carp;
 use File::Temp ();
 use Path::Class qw(dir);
@@ -60,7 +68,14 @@ sub release {
     $tmp->print($self->mk_spec($archive));
     $tmp->flush;
 
-    my $sourcedir = qx/rpm --eval '%{_sourcedir}'/
+    my @defineargs = ();
+    foreach ( @{$self->define} ) {
+        next if !$_;
+        push @defineargs, '--define', "'$_'";
+    }
+    my $definestr = join(' ', @defineargs);
+
+    my $sourcedir = qx/rpm $definestr --eval '%{_sourcedir}'/
         or $self->log_fatal(q{couldn't determine RPM sourcedir});
     $sourcedir =~ s/[\r\n]+$//;
     $sourcedir .= '/';
@@ -75,6 +90,7 @@ sub release {
     } else {
         $self->log_fatal(q{invalid build type }.$self->build);
     }
+    push @cmd, @defineargs;
     push @cmd, qw/--sign/   if $self->sign;
     push @cmd, qw/--nodeps/ if $self->ignore_build_deps;
     push @cmd, "$tmpfile";
@@ -82,7 +98,7 @@ sub release {
     if ($ENV{DZIL_PLUGIN_RPM_TEST}) {
         $self->log("test: would have executed @cmd");
     } else {
-        system(@cmd) && $self->log_fatal('rpmbuild failed');
+        system("@cmd") && $self->log_fatal('rpmbuild failed');
     }
 
     return;
